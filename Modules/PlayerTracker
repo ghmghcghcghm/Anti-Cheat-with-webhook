@@ -1,0 +1,284 @@
+--[[
+    PlayerTracker.lua  (v3 — Final)
+    Location: ReplicatedStorage/Modules/PlayerTracker.lua
+
+    Per-player detection + rolling replay buffer.
+
+    Detection fixes vs earlier versions:
+      • Speed: horizontal (XZ) velocity only — vertical jump momentum excluded
+      • Speed: skipped entirely during jump grace window
+      • Fly:   full NORMAL_AIR state list — Freefall/Jumping/GettingUp/Physics
+               all correctly excluded from suspicious air time
+      • Fly:   1.2 s jump grace window started on StateChanged → Jumping
+      • Both checks skip frozen players (WalkSpeed == 0)
+--]]
+
+local RunService = game:GetService("RunService")
+
+local ReplayBuffer = require(script.Parent.ReplayBuffer)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- State classification tables
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- Being in any of these resets the air timer to 0
+local STATES_GROUNDED = {
+	[Enum.HumanoidStateType.Running]           = true,
+	[Enum.HumanoidStateType.RunningNoPhysics]  = true,
+	[Enum.HumanoidStateType.Climbing]          = true,
+	[Enum.HumanoidStateType.Swimming]          = true,
+	[Enum.HumanoidStateType.Seated]            = true,
+	[Enum.HumanoidStateType.StrafingNoPhysics] = true,
+	[Enum.HumanoidStateType.Landed]            = true,
+}
+
+-- Being in any of these means the player is airborne but NOT cheating
+-- (normal jump arc, ragdoll recovery, seat transitions, etc.)
+local STATES_LEGAL_AIR = {
+	[Enum.HumanoidStateType.Jumping]          = true,
+	[Enum.HumanoidStateType.Freefall]         = true,
+	[Enum.HumanoidStateType.GettingUp]        = true,
+	[Enum.HumanoidStateType.Physics]          = true,
+	[Enum.HumanoidStateType.PlatformStanding] = true,
+	[Enum.HumanoidStateType.FallingDown]      = true,
+}
+
+-- Grace period after a jump starts before fly detection can fire.
+-- Covers the brief gap where the state is neither Jumping nor Freefall.
+local JUMP_GRACE = 1.2  -- seconds
+
+-- ─────────────────────────────────────────────────────────────────────────────
+local PlayerTracker = {}
+PlayerTracker.__index = PlayerTracker
+
+function PlayerTracker.new(player, config)
+	local self = setmetatable({}, PlayerTracker)
+
+	self.Player  = player
+	self.Config  = config
+	self.Active  = false
+
+	-- Frame state
+	self._lastPos       = nil
+	self._lastCF        = nil
+	self._lastVelocity  = Vector3.new()
+	self._lastState     = nil
+
+	-- Air time tracking
+	self._airTime         = 0
+	self._jumpGrace       = 0   -- counts down from JUMP_GRACE after each jump
+
+	-- Violation scoring
+	self._score     = 0
+	self._log       = {}   -- { type, score, detail, timestamp }
+
+	-- Camera (client-supplied, replay only)
+	self._camLook   = Vector3.new(0, 0, -1)
+
+	-- Replay ring buffer
+	self._replay    = ReplayBuffer.new(config.BufferLengthSecs, config.TickRate)
+
+	-- Callback: OnViolation(type, score)
+	self.OnViolation = nil
+
+	self._conns = {}
+	return self
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+
+function PlayerTracker:Start()
+	local char = self.Player.Character
+	if not char then return end
+
+	local hum  = char:FindFirstChildOfClass("Humanoid")
+	local root = char:FindFirstChild("HumanoidRootPart")
+	if not hum or not root then return end
+
+	self._lastPos  = root.Position
+	self._lastCF   = root.CFrame
+
+	-- Humanoid state change: handle jump grace + ground reset
+	local conn = hum.StateChanged:Connect(function(_, new)
+		self._lastState = new
+
+		if new == Enum.HumanoidStateType.Jumping then
+			-- Start grace window — suppresses fly and speed checks for JUMP_GRACE seconds
+			self._jumpGrace = JUMP_GRACE
+			self._airTime   = 0
+
+		elseif STATES_GROUNDED[new] then
+			self._airTime   = 0
+			self._jumpGrace = 0
+		end
+	end)
+	table.insert(self._conns, conn)
+
+	self.Active = true
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Main tick — called every Heartbeat
+-- ─────────────────────────────────────────────────────────────────────────────
+
+function PlayerTracker:Tick(dt)
+	if not self.Active then return end
+
+	local char = self.Player.Character
+	if not char then return end
+
+	local hum  = char:FindFirstChildOfClass("Humanoid")
+	local root = char:FindFirstChild("HumanoidRootPart")
+	if not hum or not root then return end
+	if hum.Health <= 0    then return end
+	if hum.WalkSpeed == 0 then return end  -- player is frozen; all checks off
+
+	local pos   = root.Position
+	local cf    = root.CFrame
+	local vel   = root.AssemblyLinearVelocity
+	local state = hum:GetState()
+	local now   = tick()
+
+	-- Record frame (always, even during grace window)
+	self._replay:Push({
+		timestamp     = now,
+		position      = pos,
+		cframe        = cf,
+		velocity      = vel,
+		humanoidState = state,
+		lookVector    = self._camLook,
+	})
+
+	if self._lastPos then
+		local dt_clamped = math.max(dt, 0.001)
+
+		-- Tick down jump grace before any detection
+		if self._jumpGrace > 0 then
+			self._jumpGrace = math.max(0, self._jumpGrace - dt)
+		end
+
+		self:_checkSpeed(pos, vel, state, dt_clamped)
+		self:_checkFly(state, dt)
+		self:_checkTeleport(pos)
+	end
+
+	-- Passive score decay
+	self._score = math.max(0, self._score - self.Config.ViolationDecayRate * dt)
+
+	self._lastPos      = pos
+	self._lastCF       = cf
+	self._lastVelocity = vel
+	self._lastState    = state
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Detection checks
+-- ─────────────────────────────────────────────────────────────────────────────
+
+function PlayerTracker:_checkSpeed(pos, vel, state, dt)
+	-- Fully suppress during jump grace or any normal air state
+	if self._jumpGrace > 0 then return end
+	if STATES_LEGAL_AIR[state] then return end
+
+	-- Horizontal velocity only — vertical jump/gravity excluded
+	local hVel  = Vector3.new(vel.X, 0, vel.Z)
+	local hDist = Vector3.new(pos.X - self._lastPos.X, 0, pos.Z - self._lastPos.Z).Magnitude
+
+	-- Use the lower of the two measures to be generous with physics jitter
+	local measured = math.min(hVel.Magnitude, hDist / dt)
+
+	if measured > self.Config.MaxSpeedStuds then
+		self:_addViolation("Speed", self.Config.SpeedViolationScore,
+			string.format("%.1f studs/s", measured))
+	end
+end
+
+function PlayerTracker:_checkFly(state, dt)
+	-- Suppress during jump grace window
+	if self._jumpGrace > 0 then return end
+
+	local isLegal = STATES_GROUNDED[state] or STATES_LEGAL_AIR[state]
+
+	if isLegal then
+		-- Fast decay when the player is in a legal state
+		self._airTime = math.max(0, self._airTime - dt * 3)
+	else
+		self._airTime = self._airTime + dt
+	end
+
+	if self._airTime > self.Config.MaxAirTimeSecs then
+		self:_addViolation("Fly", self.Config.FlyViolationScore,
+			string.format("%.1fs suspicious airtime", self._airTime))
+		self._airTime = self.Config.MaxAirTimeSecs * 0.5  -- partial reset, avoid re-fire every tick
+	end
+end
+
+function PlayerTracker:_checkTeleport(pos)
+	local dist = (pos - self._lastPos).Magnitude
+	if dist > self.Config.TeleportThreshold then
+		self:_addViolation("Teleport", self.Config.TeleportViolationScore,
+			string.format("%.1f stud jump", dist))
+	end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Scoring helpers
+-- ─────────────────────────────────────────────────────────────────────────────
+
+function PlayerTracker:_addViolation(vType, vScore, detail)
+	self._score = self._score + vScore
+
+	table.insert(self._log, {
+		type      = vType,
+		score     = vScore,
+		detail    = detail or "",
+		timestamp = tick(),
+	})
+	if #self._log > 50 then table.remove(self._log, 1) end
+
+	if self.OnViolation then self.OnViolation(vType, vScore) end
+end
+
+-- LogViolation is called by AntiCheatManager for external injection (no-op here,
+-- detection already calls _addViolation internally)
+function PlayerTracker:LogViolation(_type, _score) end
+
+function PlayerTracker:GetViolationScore() return self._score end
+
+function PlayerTracker:GetViolationLog()
+	local copy = {}
+	for _, v in ipairs(self._log) do table.insert(copy, v) end
+	return copy
+end
+
+function PlayerTracker:ResetScore()
+	self._score = 0
+	self._log   = {}
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Replay
+-- ─────────────────────────────────────────────────────────────────────────────
+
+function PlayerTracker:GetReplaySnapshot()
+	return self._replay:GetAll()
+end
+
+function PlayerTracker:SetCameraLookVector(look)
+	if typeof(look) == "Vector3" and look.Magnitude > 0.1 then
+		self._camLook = look.Unit
+	end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Cleanup
+-- ─────────────────────────────────────────────────────────────────────────────
+
+function PlayerTracker:Destroy()
+	self.Active = false
+	for _, c in ipairs(self._conns) do c:Disconnect() end
+	self._conns = {}
+	self._replay:Clear()
+end
+
+return PlayerTracker
