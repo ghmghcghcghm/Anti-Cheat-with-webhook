@@ -1,0 +1,234 @@
+--[[
+    AntiCheatManager.lua  (v3 — Final)
+    Location: ReplicatedStorage/Modules/AntiCheatManager.lua
+
+    Central orchestrator. Manages all PlayerTrackers, handles
+    flagging/freeze logic, webhook dispatch, and exposes the
+    whitelist/exempt API used by the server script.
+
+    PUBLIC API
+        manager:Start()
+        manager:Stop()
+        manager:GetTracker(player)   → PlayerTracker | nil
+        manager:FreezePlayer(player)
+        manager:UnfreezePlayer(player)
+        manager.IsExempt            = function(player) → bool   (injected by server)
+        manager.OnPlayerFlagged     = function(player, violationLog)
+--]]
+
+local Players    = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local PlayerTracker  = require(script.Parent.PlayerTracker)
+local WebhookService = require(script.Parent.WebhookService)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Defaults — all overridable via the config table passed to .new()
+-- ─────────────────────────────────────────────────────────────────────────────
+local DEFAULT_CONFIG = {
+	MaxSpeedStuds          = 32,
+	MaxAirTimeSecs         = 3.5,
+	TeleportThreshold      = 80,
+
+	SpeedViolationScore    = 15,
+	FlyViolationScore      = 20,
+	TeleportViolationScore = 30,
+	ViolationDecayRate     = 2,      -- pts/second passive decay
+	FlagThreshold          = 60,
+
+	ReportCooldownSecs     = 30,
+	BufferLengthSecs       = 30,
+	TickRate               = 20,
+
+	WebhookURL     = "",
+	WebhookEnabled = true,
+}
+
+-- ─────────────────────────────────────────────────────────────────────────────
+local AntiCheatManager = {}
+AntiCheatManager.__index = AntiCheatManager
+
+function AntiCheatManager.new(config)
+	local self = setmetatable({}, AntiCheatManager)
+
+	-- Merge config with defaults
+	self.Config = {}
+	for k, v in pairs(DEFAULT_CONFIG) do
+		self.Config[k] = (config and config[k] ~= nil) and config[k] or v
+	end
+
+	self._trackers        = {}   -- [Player] = PlayerTracker
+	self._reportCooldowns = {}   -- [Player] = last report tick()
+	self._connections     = {}
+	self._running         = false
+
+	self._webhookService  = WebhookService.new(self.Config.WebhookURL)
+
+	-- Injected by server script — returns true to skip AC for this player
+	self.IsExempt        = function(_player) return false end
+	-- Callback fired after flagging: function(player, violationLog)
+	self.OnPlayerFlagged = nil
+
+	return self
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+function AntiCheatManager:Start()
+	if self._running then return end
+	self._running = true
+
+	for _, p in ipairs(Players:GetPlayers()) do self:_onPlayerAdded(p) end
+
+	table.insert(self._connections, Players.PlayerAdded:Connect(function(p)
+		self:_onPlayerAdded(p)
+	end))
+	table.insert(self._connections, Players.PlayerRemoving:Connect(function(p)
+		self:_onPlayerRemoving(p)
+	end))
+	table.insert(self._connections, RunService.Heartbeat:Connect(function(dt)
+		self:_heartbeat(dt)
+	end))
+end
+
+function AntiCheatManager:Stop()
+	self._running = false
+	for _, c in ipairs(self._connections) do c:Disconnect() end
+	self._connections = {}
+	for p, t in pairs(self._trackers) do t:Destroy(); self._trackers[p] = nil end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Player lifecycle
+-- ─────────────────────────────────────────────────────────────────────────────
+
+function AntiCheatManager:_setupTracker(player)
+	if self.IsExempt(player) then return end  -- exempt players never get a tracker
+
+	if self._trackers[player] then
+		self._trackers[player]:Destroy()
+	end
+
+	local tracker = PlayerTracker.new(player, self.Config)
+	tracker.OnViolation = function(vType, vScore)
+		self:_onViolation(player, tracker, vType, vScore)
+	end
+	tracker:Start()
+	self._trackers[player] = tracker
+end
+
+function AntiCheatManager:_onPlayerAdded(player)
+	if player.Character then self:_setupTracker(player) end
+	player.CharacterAdded:Connect(function()
+		task.wait(1.2)  -- wait for character to fully load + physics to settle
+		self:_setupTracker(player)
+	end)
+end
+
+function AntiCheatManager:_onPlayerRemoving(player)
+	local t = self._trackers[player]
+	if t then t:Destroy() end
+	self._trackers[player]        = nil
+	self._reportCooldowns[player] = nil
+end
+
+function AntiCheatManager:_heartbeat(dt)
+	for player, tracker in pairs(self._trackers) do
+		if not tracker.Active then continue end
+
+		-- Mid-session whitelist check — stop ticking immediately if exempted
+		if self.IsExempt(player) then
+			tracker:Destroy()
+			self._trackers[player] = nil
+			continue
+		end
+
+		local ok, err = pcall(tracker.Tick, tracker, dt)
+		if not ok then
+			warn(string.format("[AntiCheat] Tracker error for %s: %s", player.Name, tostring(err)))
+		end
+	end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Violation pipeline
+-- ─────────────────────────────────────────────────────────────────────────────
+
+function AntiCheatManager:_onViolation(player, tracker, vType, vScore)
+	tracker:LogViolation(vType, vScore)
+	local total = tracker:GetViolationScore()
+
+	warn(string.format("[AntiCheat] %s triggered %s (+%d pts, total: %d/%d)",
+		player.Name, vType, vScore, total, self.Config.FlagThreshold))
+
+	if total >= self.Config.FlagThreshold then
+		self:_flag(player, tracker)
+	end
+end
+
+function AntiCheatManager:_flag(player, tracker)
+	local now  = tick()
+	local last = self._reportCooldowns[player]
+	if last and (now - last) < self.Config.ReportCooldownSecs then return end
+	self._reportCooldowns[player] = now
+
+	warn(string.format("[AntiCheat] Flagging %s (total score: %d)",
+		player.Name, tracker:GetViolationScore()))
+
+	-- 1. Server-authoritative freeze
+	self:FreezePlayer(player)
+
+	-- 2. Build deduplicated violation name list for webhook
+	local log    = tracker:GetViolationLog()
+	local vNames = {}
+	local seen   = {}
+	for _, v in ipairs(log) do
+		if not seen[v.type] then seen[v.type] = true; table.insert(vNames, v.type) end
+	end
+
+	-- 3. Webhook
+	if self.Config.WebhookEnabled and self.Config.WebhookURL ~= "" then
+		self._webhookService:SendAlert({
+			playerName   = player.Name,
+			userId       = player.UserId,
+			violations   = vNames,
+			score        = tracker:GetViolationScore(),
+			replayFrames = #tracker:GetReplaySnapshot(),
+			timestamp    = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+		})
+	end
+
+	-- 4. External callback (e.g. auto-kick logic in server script)
+	if self.OnPlayerFlagged then
+		task.spawn(self.OnPlayerFlagged, player, log)
+	end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Public API
+-- ─────────────────────────────────────────────────────────────────────────────
+
+function AntiCheatManager:FreezePlayer(player)
+	local char = player.Character
+	if not char then return end
+	local hum  = char:FindFirstChildOfClass("Humanoid")
+	local root = char:FindFirstChild("HumanoidRootPart")
+	if hum  then hum.WalkSpeed = 0; hum.JumpPower = 0; hum.AutoRotate = false end
+	if root then root.Anchored = true end
+end
+
+function AntiCheatManager:UnfreezePlayer(player)
+	local char = player.Character
+	if not char then return end
+	local hum  = char:FindFirstChildOfClass("Humanoid")
+	local root = char:FindFirstChild("HumanoidRootPart")
+	if hum  then hum.WalkSpeed = 16; hum.JumpPower = 50; hum.AutoRotate = true end
+	if root then root.Anchored = false end
+	local t = self._trackers[player]
+	if t then t:ResetScore() end
+end
+
+function AntiCheatManager:GetTracker(player)
+	return self._trackers[player]
+end
+
+return AntiCheatManager
