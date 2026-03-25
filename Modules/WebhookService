@@ -1,0 +1,100 @@
+--[[
+    WebhookService.lua  (v3 — Final)
+    Location: ReplicatedStorage/Modules/WebhookService.lua
+
+    Sends Discord rich-embed alerts via HttpService:PostAsync().
+    Runs on a task.spawn thread — never blocks the game loop.
+
+    PREREQUISITE: HttpService must be enabled.
+      Studio → Home → Game Settings → Security → Allow HTTP Requests = ON
+--]]
+
+local HttpService = game:GetService("HttpService")
+
+-- Embed sidebar colours (decimal)
+local COLOR_RED    = 15158332   -- #E74C3C  high severity  (score ≥ 80)
+local COLOR_ORANGE = 15105570   -- #E67E22  medium         (score ≥ 50)
+local COLOR_YELLOW = 16763904   -- #FFD700  low
+
+local function severityColor(score)
+	if score >= 80 then return COLOR_RED    end
+	if score >= 50 then return COLOR_ORANGE end
+	return COLOR_YELLOW
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+local WebhookService = {}
+WebhookService.__index = WebhookService
+
+function WebhookService.new(url)
+	local self     = setmetatable({}, WebhookService)
+	self._url      = url or ""
+	return self
+end
+
+--[[
+    :SendAlert(data)
+    data = {
+        playerName   string
+        userId       number
+        violations   string[]
+        score        number
+        replayFrames number
+        timestamp    string   (ISO 8601)
+    }
+--]]
+function WebhookService:SendAlert(data)
+	if self._url == "" then
+		return
+	end
+
+	local vStr    = #data.violations > 0 and table.concat(data.violations, ", ") or "Unknown"
+	local summary = vStr .. " exploit" .. (#data.violations > 1 and "s" or "") .. " detected."
+
+	local payload = {
+		username = "AntiCheat Bot",
+		embeds   = {
+			{
+				title       = "🚨 Anti-Cheat Alert",
+				description = summary,
+				color       = severityColor(data.score or 0),
+				fields      = {
+					{ name = "👤 Player",         value = "**" .. (data.playerName or "?") .. "**", inline = true  },
+					{ name = "🆔 User ID",         value = tostring(data.userId or 0),               inline = true  },
+					{ name = "⚠️ Violations",      value = vStr,                                     inline = true  },
+					{ name = "📊 Violation Score", value = math.floor(data.score or 0) .. " pts",    inline = true  },
+					{ name = "🎬 Replay Frames",   value = tostring(data.replayFrames or 0),          inline = true  },
+					{ name = "🕒 Timestamp (UTC)", value = data.timestamp or "N/A",                  inline = false },
+				},
+				footer    = { text = "Roblox Anti-Cheat System v3" },
+				timestamp = data.timestamp or os.date("!%Y-%m-%dT%H:%M:%SZ"),
+			}
+		}
+	}
+
+	task.spawn(function()
+		local ok, encoded = pcall(HttpService.JSONEncode, HttpService, payload)
+		if not ok then
+			return
+		end
+
+		local sent, resp = pcall(HttpService.PostAsync, HttpService,
+			self._url, encoded, Enum.HttpContentType.ApplicationJson, false)
+		if sent then
+		else
+		end
+	end)
+end
+
+function WebhookService:SendCustomEmbed(embed)
+	if self._url == "" then return end
+	task.spawn(function()
+		local ok, encoded = pcall(HttpService.JSONEncode, HttpService, { embeds = { embed } })
+		if ok then
+			pcall(HttpService.PostAsync, HttpService,
+				self._url, encoded, Enum.HttpContentType.ApplicationJson, false)
+		end
+	end)
+end
+
+return WebhookService
