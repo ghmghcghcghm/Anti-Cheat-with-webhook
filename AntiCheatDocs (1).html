@@ -1,0 +1,1377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roblox Anti-Cheat System — Documentation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #0a0c10;
+    --surface: #111318;
+    --surface2: #181c22;
+    --border: #1e2430;
+    --border2: #252c38;
+    --red: #ff4a4a;
+    --red-dim: #cc3333;
+    --red-glow: rgba(255,74,74,0.15);
+    --amber: #ffb347;
+    --green: #4ade80;
+    --blue: #60a5fa;
+    --purple: #a78bfa;
+    --text: #e2e8f0;
+    --text-muted: #64748b;
+    --text-dim: #94a3b8;
+    --code-bg: #0d1117;
+    --accent: #ff4a4a;
+    --tag-bg: rgba(255,74,74,0.1);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    line-height: 1.7;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── LAYOUT ── */
+  .layout {
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 24px 0;
+  }
+
+  .sidebar-logo {
+    padding: 0 20px 24px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+
+  .sidebar-logo .logo-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 15px;
+    color: var(--red);
+    letter-spacing: -0.3px;
+  }
+
+  .shield-icon {
+    width: 28px; height: 28px;
+    background: var(--red-glow);
+    border: 1px solid var(--red);
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+
+  .sidebar-section-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-muted);
+    padding: 8px 20px 4px;
+    margin-top: 8px;
+  }
+
+  .sidebar-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 20px;
+    font-size: 13.5px;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.15s;
+    border-left: 2px solid transparent;
+    text-decoration: none;
+  }
+
+  .sidebar-link:hover {
+    color: var(--text);
+    background: var(--surface2);
+  }
+
+  .sidebar-link.active {
+    color: var(--red);
+    border-left-color: var(--red);
+    background: var(--red-glow);
+  }
+
+  .sidebar-link .dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.5;
+    flex-shrink: 0;
+  }
+
+  /* ── MAIN CONTENT ── */
+  .main {
+    flex: 1;
+    overflow-x: hidden;
+  }
+
+  /* ── TOP BAR ── */
+  .topbar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    backdrop-filter: blur(8px);
+  }
+
+  .breadcrumb {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .breadcrumb span { color: var(--text-dim); }
+
+  .version-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    background: var(--tag-bg);
+    color: var(--red);
+    border: 1px solid rgba(255,74,74,0.3);
+    border-radius: 4px;
+    padding: 3px 8px;
+  }
+
+  /* ── PAGE SECTIONS ── */
+  .section {
+    display: none;
+    padding: 40px 48px 80px;
+    max-width: 900px;
+  }
+
+  .section.active { display: block; }
+
+  /* ── TYPOGRAPHY ── */
+  .page-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 32px;
+    color: #fff;
+    line-height: 1.2;
+    margin-bottom: 6px;
+    letter-spacing: -0.5px;
+  }
+
+  .page-subtitle {
+    font-size: 15px;
+    color: var(--text-muted);
+    margin-bottom: 32px;
+  }
+
+  h2 {
+    font-family: 'Syne', sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    color: #fff;
+    margin: 40px 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  h3 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-dim);
+    margin: 24px 0 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+
+  p { margin-bottom: 12px; color: var(--text-dim); }
+  p strong { color: var(--text); font-weight: 600; }
+
+  /* ── CARDS ── */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+    margin: 16px 0 24px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    transition: border-color 0.2s;
+  }
+
+  .card:hover { border-color: var(--border2); }
+
+  .card-icon {
+    font-size: 22px;
+    margin-bottom: 10px;
+  }
+
+  .card-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+
+  .card-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  .card-tag {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    background: var(--tag-bg);
+    color: var(--red);
+    border-radius: 3px;
+    padding: 2px 6px;
+    margin-top: 8px;
+  }
+
+  /* ── CODE BLOCKS ── */
+  .code-block {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 12px 0 20px;
+    position: relative;
+  }
+
+  .code-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .code-lang {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .copy-btn {
+    background: none;
+    border: 1px solid var(--border2);
+    color: var(--text-muted);
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    transition: all 0.15s;
+  }
+
+  .copy-btn:hover { border-color: var(--red); color: var(--red); }
+  .copy-btn.copied { border-color: var(--green); color: var(--green); }
+
+  .code-block pre {
+    padding: 16px;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: #cdd6f4;
+  }
+
+  /* Syntax coloring */
+  .kw { color: #cba6f7; }  /* keywords */
+  .fn { color: #89b4fa; }  /* functions */
+  .st { color: #a6e3a1; }  /* strings */
+  .cm { color: #6c7086; font-style: italic; }  /* comments */
+  .nu { color: #fab387; }  /* numbers */
+  .ty { color: #f38ba8; }  /* types/classes */
+
+  /* ── STEPS ── */
+  .steps { margin: 16px 0 24px; }
+
+  .step {
+    display: flex;
+    gap: 16px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .step:last-child { border-bottom: none; }
+
+  .step-num {
+    width: 28px;
+    height: 28px;
+    background: var(--tag-bg);
+    border: 1px solid rgba(255,74,74,0.3);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--red);
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .step-content h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+
+  .step-content p {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 0;
+  }
+
+  /* ── ALERT BOX ── */
+  .alert {
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin: 12px 0;
+    font-size: 13.5px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .alert-warn {
+    background: rgba(255,179,71,0.08);
+    border: 1px solid rgba(255,179,71,0.3);
+    color: var(--amber);
+  }
+
+  .alert-info {
+    background: rgba(96,165,250,0.08);
+    border: 1px solid rgba(96,165,250,0.25);
+    color: var(--blue);
+  }
+
+  .alert-success {
+    background: rgba(74,222,128,0.08);
+    border: 1px solid rgba(74,222,128,0.25);
+    color: var(--green);
+  }
+
+  .alert-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .alert-body { color: inherit; line-height: 1.5; }
+  .alert-body strong { color: inherit; }
+
+  /* ── FOLDER TREE ── */
+  .folder-tree {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 2;
+    margin: 12px 0 20px;
+  }
+
+  .folder-tree .folder { color: var(--amber); }
+  .folder-tree .file   { color: var(--text-dim); }
+  .folder-tree .file.server { color: #60a5fa; }
+  .folder-tree .file.client { color: #4ade80; }
+  .folder-tree .file.module { color: #a78bfa; }
+  .folder-tree .indent-1 { padding-left: 20px; }
+  .folder-tree .indent-2 { padding-left: 40px; }
+
+  /* ── VIOLATION TABLE ── */
+  .vio-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 24px;
+    font-size: 13.5px;
+  }
+
+  .vio-table th {
+    background: var(--surface2);
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 10px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .vio-table td {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+
+  .vio-table tr:last-child td { border-bottom: none; }
+  .vio-table .score-high { color: var(--red); font-weight: 600; }
+  .vio-table .score-mid  { color: var(--amber); font-weight: 600; }
+
+  /* ── ARCH DIAGRAM ── */
+  .arch-diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    margin: 16px 0 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    align-items: center;
+  }
+
+  .arch-layer {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .arch-box {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 13px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-dim);
+    text-align: center;
+    transition: border-color 0.2s, color 0.2s;
+  }
+
+  .arch-box:hover { border-color: var(--red); color: var(--text); cursor: default; }
+  .arch-box.red { border-color: rgba(255,74,74,0.4); color: var(--red); }
+  .arch-box.blue { border-color: rgba(96,165,250,0.4); color: var(--blue); }
+  .arch-box.purple { border-color: rgba(167,139,250,0.4); color: var(--purple); }
+  .arch-box.green { border-color: rgba(74,222,128,0.4); color: var(--green); }
+  .arch-box.amber { border-color: rgba(255,179,71,0.4); color: var(--amber); }
+
+  .arch-arrow {
+    color: var(--border2);
+    font-size: 18px;
+    text-align: center;
+    padding: 4px 0;
+  }
+
+  /* ── WEBHOOK PREVIEW ── */
+  .discord-preview {
+    background: #36393f;
+    border-radius: 8px;
+    padding: 16px;
+    margin: 12px 0 24px;
+    border-left: 4px solid #e74c3c;
+    font-family: 'Inter', sans-serif;
+  }
+
+  .discord-preview .embed-title {
+    color: #fff;
+    font-weight: 600;
+    font-size: 15px;
+    margin-bottom: 4px;
+  }
+
+  .discord-preview .embed-desc {
+    color: #b9bbbe;
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+
+  .discord-preview .fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .discord-preview .field-name {
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+
+  .discord-preview .field-value {
+    color: #b9bbbe;
+    font-size: 12px;
+  }
+
+  .discord-preview .field-inline { display: block; }
+
+  /* ── FOOTER ── */
+  .section-footer {
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .section-footer .footer-text {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .nav-btn {
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    color: var(--text-dim);
+    font-size: 13px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    transition: all 0.15s;
+  }
+
+  .nav-btn:hover { border-color: var(--red); color: var(--red); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- ── SIDEBAR ── -->
+  <nav class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-badge">
+        <div class="shield-icon">🛡</div>
+        AntiCheat v1.0
+      </div>
+    </div>
+
+    <div class="sidebar-section-title">Getting Started</div>
+    <a class="sidebar-link active" onclick="showSection('overview')">
+      <span class="dot"></span> Overview
+    </a>
+    <a class="sidebar-link" onclick="showSection('structure')">
+      <span class="dot"></span> Folder Structure
+    </a>
+    <a class="sidebar-link" onclick="showSection('setup')">
+      <span class="dot"></span> Setup & Installation
+    </a>
+
+    <div class="sidebar-section-title">Architecture</div>
+    <a class="sidebar-link" onclick="showSection('arch')">
+      <span class="dot"></span> System Architecture
+    </a>
+    <a class="sidebar-link" onclick="showSection('detection')">
+      <span class="dot"></span> Detection Logic
+    </a>
+    <a class="sidebar-link" onclick="showSection('replay')">
+      <span class="dot"></span> Replay System
+    </a>
+
+    <div class="sidebar-section-title">Integrations</div>
+    <a class="sidebar-link" onclick="showSection('webhook')">
+      <span class="dot"></span> Discord Webhook
+    </a>
+
+    <div class="sidebar-section-title">Reference</div>
+    <a class="sidebar-link" onclick="showSection('config')">
+      <span class="dot"></span> Configuration
+    </a>
+    <a class="sidebar-link" onclick="showSection('commands')">
+      <span class="dot"></span> Admin Commands
+    </a>
+    <a class="sidebar-link" onclick="showSection('security')">
+      <span class="dot"></span> Security Notes
+    </a>
+  </nav>
+
+  <!-- ── MAIN ── -->
+  <main class="main">
+
+    <div class="topbar">
+      <div class="breadcrumb">
+        <span>Roblox Anti-Cheat</span>
+        <span style="color:var(--border2)">›</span>
+        <span id="breadcrumb-current" style="color:var(--text)">Overview</span>
+      </div>
+      <div class="version-badge">v1.0 · Production-Ready</div>
+    </div>
+
+    <!-- ── SECTION: OVERVIEW ── -->
+    <div class="section active" id="section-overview">
+      <div class="page-title">Anti-Cheat System</div>
+      <div class="page-subtitle">Server-authoritative · OOP · Replay · Discord Alerts</div>
+
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-icon">🔐</div>
+          <div class="card-title">Server-Side Detection</div>
+          <div class="card-desc">All checks run on the server. Clients cannot bypass or spoof detection results.</div>
+          <span class="card-tag">AUTHORITATIVE</span>
+        </div>
+        <div class="card">
+          <div class="card-icon">🎬</div>
+          <div class="card-title">Selective Replay</div>
+          <div class="card-desc">30-second rolling buffer. Reconstruct flagged player movement frame-by-frame.</div>
+          <span class="card-tag">30s BUFFER</span>
+        </div>
+        <div class="card">
+          <div class="card-icon">📡</div>
+          <div class="card-title">Discord Alerts</div>
+          <div class="card-desc">Rich embed webhooks fire on every flag with violation details and timestamps.</div>
+          <span class="card-tag">WEBHOOK</span>
+        </div>
+        <div class="card">
+          <div class="card-icon">🧠</div>
+          <div class="card-title">Clean OOP</div>
+          <div class="card-desc">Five fully encapsulated module classes with no global state pollution.</div>
+          <span class="card-tag">5 MODULES</span>
+        </div>
+      </div>
+
+      <h2>What's Detected</h2>
+
+      <table class="vio-table">
+        <thead>
+          <tr>
+            <th>Exploit Type</th>
+            <th>Detection Method</th>
+            <th>Score</th>
+            <th>Default Threshold</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong style="color:var(--text)">Speed Exploit</strong></td>
+            <td>Distance/time per tick vs MaxSpeedStuds</td>
+            <td class="score-mid">+15 pts</td>
+            <td>32 studs/s</td>
+          </tr>
+          <tr>
+            <td><strong style="color:var(--text)">Fly Exploit</strong></td>
+            <td>Sustained air time + HumanoidState validation</td>
+            <td class="score-high">+20 pts</td>
+            <td>3.5s airtime</td>
+          </tr>
+          <tr>
+            <td><strong style="color:var(--text)">Teleport Exploit</strong></td>
+            <td>Sudden large position delta in single tick</td>
+            <td class="score-high">+30 pts</td>
+            <td>80 studs jump</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="alert alert-info">
+        <span class="alert-icon">ℹ️</span>
+        <div class="alert-body">Violation scores decay at <strong>2 pts/second</strong> passively. A player must sustain violations to reach the 60-point flag threshold — avoiding false positives from brief physics hiccups.</div>
+      </div>
+
+      <div class="section-footer">
+        <span class="footer-text">// overview</span>
+        <button class="nav-btn" onclick="showSection('structure')">Folder Structure →</button>
+      </div>
+    </div>
+
+    <!-- ── SECTION: FOLDER STRUCTURE ── -->
+    <div class="section" id="section-structure">
+      <div class="page-title">Folder Structure</div>
+      <div class="page-subtitle">How to organize scripts in Roblox Studio</div>
+
+      <div class="folder-tree">
+        <div><span class="folder">📦 ReplicatedStorage</span></div>
+        <div class="indent-1"><span class="folder">📁 Modules</span></div>
+        <div class="indent-2"><span class="file module">🟣 AntiCheatManager.lua</span> &nbsp;<span style="color:var(--text-muted);font-size:11px">// orchestrator</span></div>
+        <div class="indent-2"><span class="file module">🟣 PlayerTracker.lua</span> &nbsp;<span style="color:var(--text-muted);font-size:11px">// per-player detection</span></div>
+        <div class="indent-2"><span class="file module">🟣 ReplayBuffer.lua</span> &nbsp;<span style="color:var(--text-muted);font-size:11px">// circular ring buffer</span></div>
+        <div class="indent-2"><span class="file module">🟣 ReplayController.lua</span> &nbsp;<span style="color:var(--text-muted);font-size:11px">// dummy + camera</span></div>
+        <div class="indent-2"><span class="file module">🟣 WebhookService.lua</span> &nbsp;<span style="color:var(--text-muted);font-size:11px">// Discord HTTP</span></div>
+        <div style="margin-top:8px"><span class="folder">📦 ServerScriptService</span></div>
+        <div class="indent-1"><span class="file server">🔵 MainAntiCheatServer.server.lua</span> &nbsp;<span style="color:var(--text-muted);font-size:11px">// entry point</span></div>
+        <div style="margin-top:8px"><span class="folder">📦 StarterPlayer</span></div>
+        <div class="indent-1"><span class="folder">📁 StarterPlayerScripts</span></div>
+        <div class="indent-2"><span class="file client">🟢 AntiCheatClient.client.lua</span> &nbsp;<span style="color:var(--text-muted);font-size:11px">// camera + HUD</span></div>
+      </div>
+
+      <h2>Script Types Legend</h2>
+
+      <div class="card-grid">
+        <div class="card">
+          <div style="color:var(--blue);font-size:13px;font-family:'JetBrains Mono',monospace;font-weight:600;margin-bottom:6px">.server.lua</div>
+          <div class="card-desc">Runs only on the server. Never accessible to clients. Use for detection, webhook calls, and character manipulation.</div>
+        </div>
+        <div class="card">
+          <div style="color:var(--green);font-size:13px;font-family:'JetBrains Mono',monospace;font-weight:600;margin-bottom:6px">.client.lua</div>
+          <div class="card-desc">Runs on the client. Used only for camera direction reporting and replay HUD display.</div>
+        </div>
+        <div class="card">
+          <div style="color:var(--purple);font-size:13px;font-family:'JetBrains Mono',monospace;font-weight:600;margin-bottom:6px">ModuleScript</div>
+          <div class="card-desc">Required by server scripts. Contain all OOP class definitions. Cannot be required by clients.</div>
+        </div>
+      </div>
+
+      <div class="section-footer">
+        <button class="nav-btn" onclick="showSection('overview')">← Overview</button>
+        <button class="nav-btn" onclick="showSection('setup')">Setup & Install →</button>
+      </div>
+    </div>
+
+    <!-- ── SECTION: SETUP ── -->
+    <div class="section" id="section-setup">
+      <div class="page-title">Setup & Installation</div>
+      <div class="page-subtitle">Get the system running in your game in 5 minutes</div>
+
+      <h2>Step 1 — Enable HttpService</h2>
+      <p>Discord webhooks require HttpService to be enabled. This is disabled by default for security.</p>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <h4>Open Roblox Studio</h4>
+            <p>Launch Studio and open your game project.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <h4>Game Settings → Security</h4>
+            <p>Click <strong>Home</strong> in the top ribbon → <strong>Game Settings</strong> → <strong>Security</strong> tab.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <h4>Enable "Allow HTTP Requests"</h4>
+            <p>Toggle the switch to ON. Click Save. HttpService:PostAsync() will now work at runtime.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="alert alert-warn">
+        <span class="alert-icon">⚠️</span>
+        <div class="alert-body"><strong>Security note:</strong> HttpService only works in live game servers, not in Studio Play mode unless you're testing with a team-test server. HTTP calls are silently blocked in single-player Studio testing.</div>
+      </div>
+
+      <h2>Step 2 — Create the Discord Webhook</h2>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <h4>Open your Discord server</h4>
+            <p>Navigate to the text channel where you want alerts (e.g., <code style="color:var(--purple)">#anti-cheat-logs</code>).</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <h4>Edit Channel → Integrations</h4>
+            <p>Click the ⚙️ gear icon beside the channel name → <strong>Integrations</strong> → <strong>Webhooks</strong>.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <h4>Create New Webhook</h4>
+            <p>Click <strong>New Webhook</strong>. Name it "AntiCheat Bot". Optionally set an avatar image.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <div class="step-content">
+            <h4>Copy Webhook URL</h4>
+            <p>Click <strong>Copy Webhook URL</strong>. It looks like: <code style="color:var(--amber);font-family:'JetBrains Mono',monospace;font-size:12px">https://discord.com/api/webhooks/12345.../AbCdEf...</code></p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">5</div>
+          <div class="step-content">
+            <h4>Paste into Config</h4>
+            <p>In <code style="color:var(--blue);font-family:'JetBrains Mono',monospace;font-size:12px">MainAntiCheatServer.server.lua</code>, find the <code>CONFIG</code> table and replace the <code>WebhookURL</code> value.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">lua — MainAntiCheatServer.server.lua</span>
+          <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        </div>
+        <pre><span class="kw">local</span> CONFIG = {
+    <span class="cm">-- ... other settings ...</span>
+
+    <span class="cm">-- 🔑 Paste your webhook URL here:</span>
+    WebhookURL     = <span class="st">"https://discord.com/api/webhooks/YOUR_ID/YOUR_TOKEN"</span>,
+    WebhookEnabled = <span class="kw">true</span>,
+}</pre>
+      </div>
+
+      <h2>Step 3 — Place Scripts in Studio</h2>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <h4>Create Modules folder</h4>
+            <p>In the Explorer, right-click <strong>ReplicatedStorage</strong> → Insert Object → <strong>Folder</strong>. Name it <strong>Modules</strong>.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <h4>Add ModuleScripts</h4>
+            <p>Inside <strong>Modules</strong>, create 5 <strong>ModuleScript</strong> objects. Name and paste the code for each from the provided files.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <h4>Add Server Script</h4>
+            <p>In <strong>ServerScriptService</strong>, create a <strong>Script</strong>. Paste <code>MainAntiCheatServer.server.lua</code> content.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <div class="step-content">
+            <h4>Add LocalScript</h4>
+            <p>In <strong>StarterPlayer → StarterPlayerScripts</strong>, create a <strong>LocalScript</strong>. Paste <code>AntiCheatClient.client.lua</code> content.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">5</div>
+          <div class="step-content">
+            <h4>Test in Play Mode</h4>
+            <p>Press <strong>Play</strong>. You should see <code>[AntiCheat] System started</code> in the Output window.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="alert alert-success">
+        <span class="alert-icon">✅</span>
+        <div class="alert-body">The system is ready. Try the admin command <code>!replay YourUsername thirdperson</code> in chat to test the replay system on yourself.</div>
+      </div>
+
+      <div class="section-footer">
+        <button class="nav-btn" onclick="showSection('structure')">← Folder Structure</button>
+        <button class="nav-btn" onclick="showSection('arch')">Architecture →</button>
+      </div>
+    </div>
+
+    <!-- ── SECTION: ARCHITECTURE ── -->
+    <div class="section" id="section-arch">
+      <div class="page-title">System Architecture</div>
+      <div class="page-subtitle">OOP module hierarchy and data flow</div>
+
+      <div class="arch-diagram">
+        <div class="arch-layer">
+          <div class="arch-box blue">MainAntiCheatServer.server.lua<br><span style="font-size:10px;opacity:0.6">Entry Point / Config</span></div>
+        </div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-layer">
+          <div class="arch-box red">AntiCheatManager<br><span style="font-size:10px;opacity:0.6">Orchestrator</span></div>
+        </div>
+        <div class="arch-arrow">↓ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↓</div>
+        <div class="arch-layer">
+          <div class="arch-box purple">PlayerTracker ×N<br><span style="font-size:10px;opacity:0.6">Per-Player Detection</span></div>
+          <div class="arch-box green">WebhookService<br><span style="font-size:10px;opacity:0.6">Discord HTTP</span></div>
+        </div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-layer">
+          <div class="arch-box amber">ReplayBuffer<br><span style="font-size:10px;opacity:0.6">Rolling Circular Buffer</span></div>
+          <div class="arch-box amber" style="margin-left:12px">ReplayController<br><span style="font-size:10px;opacity:0.6">Dummy + Camera</span></div>
+        </div>
+      </div>
+
+      <h2>Class Responsibilities</h2>
+
+      <h3>AntiCheatManager</h3>
+      <p>The top-level orchestrator. Creates one <strong>PlayerTracker</strong> per player, runs the heartbeat loop, handles flagging logic (scoring threshold), freezes characters, and coordinates webhook delivery. Exposes <code>OnPlayerFlagged</code> callback for external scripts.</p>
+
+      <h3>PlayerTracker</h3>
+      <p>One instance per player. Maintains a rolling state: last position, air time, velocity. Runs <strong>three detection checks</strong> every tick: speed, fly, and teleport. Also holds the player's <strong>ReplayBuffer</strong> and accepts camera direction updates from the client RemoteEvent.</p>
+
+      <h3>ReplayBuffer</h3>
+      <p>A pre-allocated <strong>circular ring buffer</strong> (no GC pressure). Stores the last N×tickRate frames. O(1) push, O(N) ordered retrieval. Frame data includes position, CFrame, velocity, humanoid state, and camera look vector.</p>
+
+      <h3>ReplayController</h3>
+      <p>Spawns a visible dummy character in the world. Steps through frames, repositioning the dummy and firing <code>AC_ReplayEvent</code> to the viewer's client each tick. Supports three camera modes via the client-side listener. Cleans up dummy on completion.</p>
+
+      <h3>WebhookService</h3>
+      <p>Formats Discord embed payloads (with colour-coded severity), encodes JSON, and POSTs via HttpService:PostAsync() on a spawned thread so it never blocks the game loop. Handles encode/send errors gracefully with pcall.</p>
+
+      <div class="section-footer">
+        <button class="nav-btn" onclick="showSection('setup')">← Setup</button>
+        <button class="nav-btn" onclick="showSection('detection')">Detection Logic →</button>
+      </div>
+    </div>
+
+    <!-- ── SECTION: DETECTION ── -->
+    <div class="section" id="section-detection">
+      <div class="page-title">Detection Logic</div>
+      <div class="page-subtitle">How each exploit type is caught server-side</div>
+
+      <h2>Speed Detection</h2>
+      <p>Every Heartbeat, the tracker calculates <code>distance / elapsed_time</code> between the character's current and previous RootPart positions. If this exceeds <code>MaxSpeedStuds × 1.25</code> (the 1.25× buffer absorbs physics jitter), a speed violation fires.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">lua — PlayerTracker.lua</span>
+          <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        </div>
+        <pre><span class="kw">function</span> <span class="ty">PlayerTracker</span>:<span class="fn">_checkSpeed</span>(currentPos, dt)
+    <span class="kw">local</span> dist  = (currentPos - self._lastPosition).Magnitude
+    <span class="kw">local</span> speed = dist / dt  <span class="cm">-- studs per second</span>
+
+    <span class="kw">if</span> speed > (self.Config.MaxSpeedStuds * <span class="nu">1.25</span>) <span class="kw">then</span>
+        self:<span class="fn">_addViolation</span>(<span class="st">"Speed"</span>, self.Config.SpeedViolationScore, ...)
+    <span class="kw">end</span>
+<span class="kw">end</span></pre>
+      </div>
+
+      <h2>Fly Detection</h2>
+      <p>An <strong>air time accumulator</strong> ticks up while the humanoid is not in a grounded state and not in a normal jump arc (Jumping/Freefall states are excluded). When <code>_airTime</code> exceeds <code>MaxAirTimeSecs</code>, a fly violation fires and the accumulator is partially reset (to 50% of threshold) to prevent spam.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">lua — PlayerTracker.lua</span>
+          <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        </div>
+        <pre><span class="kw">local</span> HUMANOID_STATES_ON_GROUND = {
+    [Enum.HumanoidStateType.Running]  = <span class="kw">true</span>,
+    [Enum.HumanoidStateType.Climbing] = <span class="kw">true</span>,
+    [Enum.HumanoidStateType.Swimming] = <span class="kw">true</span>,
+    <span class="cm">-- ... etc</span>
+}
+
+<span class="kw">function</span> <span class="ty">PlayerTracker</span>:<span class="fn">_checkFly</span>(currentState, dt)
+    <span class="kw">local</span> isInAir = <span class="kw">not</span> HUMANOID_STATES_ON_GROUND[currentState]
+        <span class="kw">and</span> currentState ~= Enum.HumanoidStateType.Jumping
+        <span class="kw">and</span> currentState ~= Enum.HumanoidStateType.Freefall
+
+    <span class="kw">if</span> isInAir <span class="kw">then</span>
+        self._airTime = self._airTime + dt
+    <span class="kw">else</span>
+        self._airTime = math.max(<span class="nu">0</span>, self._airTime - dt * <span class="nu">2</span>)
+    <span class="kw">end</span>
+
+    <span class="kw">if</span> self._airTime > self.Config.MaxAirTimeSecs <span class="kw">then</span>
+        self:<span class="fn">_addViolation</span>(<span class="st">"Fly"</span>, self.Config.FlyViolationScore, ...)
+        self._airTime = self.Config.MaxAirTimeSecs * <span class="nu">0.5</span>
+    <span class="kw">end</span>
+<span class="kw">end</span></pre>
+      </div>
+
+      <h2>Teleport Detection</h2>
+      <p>If the distance between two consecutive frames exceeds <code>TeleportThreshold</code> studs, a teleport violation fires. The threshold defaults to 80 studs — large enough to never fire for normal movement or lag-compensation, but catches hard teleports immediately.</p>
+
+      <h2>Violation Scoring</h2>
+      <p>Violations accumulate into a score. The score <strong>decays passively</strong> at <code>ViolationDecayRate</code> pts/second (default 2 pts/s). This means:</p>
+      <ul style="color:var(--text-dim);margin:8px 0 12px 20px;line-height:2">
+        <li>A single brief speed hiccup (+15) decays away in ~7.5 seconds without flagging.</li>
+        <li>Sustained speed hacking fires repeatedly, building score faster than decay.</li>
+        <li>Multiple exploit types stack to cross the flag threshold faster.</li>
+      </ul>
+
+      <div class="alert alert-info">
+        <span class="alert-icon">ℹ️</span>
+        <div class="alert-body">Frozen players (WalkSpeed = 0) are skipped by all detection checks, preventing false positives after flagging.</div>
+      </div>
+
+      <div class="section-footer">
+        <button class="nav-btn" onclick="showSection('arch')">← Architecture</button>
+        <button class="nav-btn" onclick="showSection('replay')">Replay System →</button>
+      </div>
+    </div>
+
+    <!-- ── SECTION: REPLAY ── -->
+    <div class="section" id="section-replay">
+      <div class="page-title">Replay System</div>
+      <div class="page-subtitle">Circular buffer + dummy reconstruction + 3 camera modes</div>
+
+      <h2>Replay Buffer</h2>
+      <p>Each PlayerTracker owns a <strong>ReplayBuffer</strong> — a pre-allocated fixed-size array using a write-head pointer. No table.insert/remove = no GC pressure on a hot path.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">lua — Frame Data Structure</span>
+        </div>
+        <pre>{
+    timestamp     : <span class="ty">number</span>,    <span class="cm">-- tick() value</span>
+    position      : <span class="ty">Vector3</span>,   <span class="cm">-- world position</span>
+    cframe        : <span class="ty">CFrame</span>,    <span class="cm">-- full rotation + position</span>
+    velocity      : <span class="ty">Vector3</span>,   <span class="cm">-- AssemblyLinearVelocity</span>
+    humanoidState : <span class="ty">Enum</span>,      <span class="cm">-- HumanoidStateType</span>
+    lookVector    : <span class="ty">Vector3</span>,   <span class="cm">-- from client camera (non-critical)</span>
+}</pre>
+      </div>
+
+      <p>At 20 ticks/second × 30 seconds = <strong>600 frames max</strong> per player. The circular buffer overwrites the oldest frame when full — always keeping the most recent 30 seconds.</p>
+
+      <h2>Camera Modes</h2>
+
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-icon">👁</div>
+          <div class="card-title">FirstPerson</div>
+          <div class="card-desc">Camera placed at the dummy's eye level, pointed in the stored client camera LookVector direction. Gives the "through the cheater's eyes" perspective.</div>
+          <span class="card-tag">LOOK_VECTOR</span>
+        </div>
+        <div class="card">
+          <div class="card-icon">🎥</div>
+          <div class="card-title">ThirdPerson</div>
+          <div class="card-desc">Camera offset 18 studs behind and 8 studs above the dummy, always looking at the dummy's torso. Best for movement clarity.</div>
+          <span class="card-tag">DEFAULT</span>
+        </div>
+        <div class="card">
+          <div class="card-icon">🔭</div>
+          <div class="card-title">TopDown</div>
+          <div class="card-desc">Camera 80 studs directly above, looking straight down at the dummy. Best for detecting fly exploits or teleports on a map.</div>
+          <span class="card-tag">OVERHEAD</span>
+        </div>
+      </div>
+
+      <h2>Violation Frame Highlighting</h2>
+      <p>When a violation was detected during the recording window, the server can pass <code>violationFrameIdx</code> to <code>ReplayController:PlayReplay()</code>. At that frame, the dummy's body turns red, a SelectionBox highlights it, and the client HUD shows a "⚠️ VIOLATION FRAME DETECTED" popup for 2 seconds.</p>
+
+      <h2>Player Hiding During Replay</h2>
+      <p>The client script sets <code>LocalTransparencyModifier = 1</code> on all other players' parts when replay starts. This is purely local (visual only) — the server is unaffected. Parts are restored to <code>0</code> when replay ends.</p>
+
+      <div class="section-footer">
+        <button class="nav-btn" onclick="showSection('detection')">← Detection</button>
+        <button class="nav-btn" onclick="showSection('webhook')">Discord Webhook →</button>
+      </div>
+    </div>
+
+    <!-- ── SECTION: WEBHOOK ── -->
+    <div class="section" id="section-webhook">
+      <div class="page-title">Discord Webhook</div>
+      <div class="page-subtitle">Rich embed alerts on every player flag</div>
+
+      <h2>Alert Preview</h2>
+      <p>This is how the Discord embed looks when a player is flagged:</p>
+
+      <div class="discord-preview">
+        <div class="embed-title">🚨 Anti-Cheat Alert</div>
+        <div class="embed-desc">Speed + Fly exploits detected on server.</div>
+        <div class="fields">
+          <div class="field-inline">
+            <div class="field-name">👤 Player</div>
+            <div class="field-value"><strong style="color:#fff">ExploiterXYZ</strong></div>
+          </div>
+          <div class="field-inline">
+            <div class="field-name">🆔 User ID</div>
+            <div class="field-value">3829471234</div>
+          </div>
+          <div class="field-inline">
+            <div class="field-name">⚠️ Violations</div>
+            <div class="field-value">Speed, Fly</div>
+          </div>
+          <div class="field-inline">
+            <div class="field-name">📊 Violation Score</div>
+            <div class="field-value">75 pts</div>
+          </div>
+          <div class="field-inline">
+            <div class="field-name">🎬 Replay Frames</div>
+            <div class="field-value">600 frames captured</div>
+          </div>
+          <div class="field-inline">
+            <div class="field-name">🕒 Timestamp (UTC)</div>
+            <div class="field-value">2025-10-15T14:32:17Z</div>
+          </div>
+        </div>
+      </div>
+
+      <h2>JSON Payload</h2>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">json — Discord Webhook Payload</span>
+          <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        </div>
+        <pre>{
+  <span class="st">"username"</span>: <span class="st">"AntiCheat Bot"</span>,
+  <span class="st">"embeds"</span>: [{
+    <span class="st">"title"</span>: <span class="st">"🚨 Anti-Cheat Alert"</span>,
+    <span class="st">"description"</span>: <span class="st">"Speed + Fly exploits detected."</span>,
+    <span class="st">"color"</span>: <span class="nu">15158332</span>,
+    <span class="st">"fields"</span>: [
+      { <span class="st">"name"</span>: <span class="st">"👤 Player"</span>,         <span class="st">"value"</span>: <span class="st">"**ExploiterXYZ**"</span>, <span class="st">"inline"</span>: <span class="kw">true</span> },
+      { <span class="st">"name"</span>: <span class="st">"🆔 User ID"</span>,         <span class="st">"value"</span>: <span class="st">"3829471234"</span>,      <span class="st">"inline"</span>: <span class="kw">true</span> },
+      { <span class="st">"name"</span>: <span class="st">"⚠️ Violations"</span>,      <span class="st">"value"</span>: <span class="st">"Speed, Fly"</span>,       <span class="st">"inline"</span>: <span class="kw">true</span> },
+      { <span class="st">"name"</span>: <span class="st">"📊 Violation Score"</span>, <span class="st">"value"</span>: <span class="st">"75 pts"</span>,           <span class="st">"inline"</span>: <span class="kw">true</span> },
+      { <span class="st">"name"</span>: <span class="st">"🎬 Replay Frames"</span>,   <span class="st">"value"</span>: <span class="st">"600 frames"</span>,       <span class="st">"inline"</span>: <span class="kw">true</span> },
+      { <span class="st">"name"</span>: <span class="st">"🕒 Timestamp"</span>,       <span class="st">"value"</span>: <span class="st">"2025-10-15T14:32:17Z"</span> }
+    ],
+    <span class="st">"footer"</span>: { <span class="st">"text"</span>: <span class="st">"Roblox Anti-Cheat System v1.0"</span> },
+    <span class="st">"timestamp"</span>: <span class="st">"2025-10-15T14:32:17Z"</span>
+  }]
+}</pre>
+      </div>
+
+      <h2>Embed Color Severity</h2>
+      <table class="vio-table">
+        <thead><tr><th>Score Range</th><th>Color</th><th>Hex</th></tr></thead>
+        <tbody>
+          <tr><td>80+ pts</td><td><span style="color:var(--red)">■</span> Red</td><td style="font-family:'JetBrains Mono',monospace">#E74C3C</td></tr>
+          <tr><td>50–79 pts</td><td><span style="color:var(--amber)">■</span> Orange</td><td style="font-family:'JetBrains Mono',monospace">#E67E22</td></tr>
+          <tr><td>&lt;50 pts</td><td><span style="color:#ffff00">■</span> Yellow</td><td style="font-family:'JetBrains Mono',monospace">#FFFF00</td></tr>
+        </tbody>
+      </table>
+
+      <div class="alert alert-warn">
+        <span class="alert-icon">⚠️</span>
+        <div class="alert-body"><strong>Keep your webhook URL private.</strong> Store it only in ServerScriptService scripts — never in ReplicatedStorage or LocalScripts. A leaked webhook URL can be spammed by anyone.</div>
+      </div>
+
+      <div class="section-footer">
+        <button class="nav-btn" onclick="showSection('replay')">← Replay</button>
+        <button class="nav-btn" onclick="showSection('config')">Configuration →</button>
+      </div>
+    </div>
+
+    <!-- ── SECTION: CONFIG ── -->
+    <div class="section" id="section-config">
+      <div class="page-title">Configuration Reference</div>
+      <div class="page-subtitle">All adjustable values in the CONFIG table</div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">lua — Full CONFIG table</span>
+          <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        </div>
+        <pre><span class="kw">local</span> CONFIG = {
+    <span class="cm">-- ── Detection ────────────────────────────────────────────────</span>
+    MaxSpeedStuds          = <span class="nu">32</span>,    <span class="cm">-- studs/s; default WalkSpeed×2</span>
+    MaxAirTimeSecs         = <span class="nu">3.5</span>,   <span class="cm">-- seconds before fly triggers</span>
+    TeleportThreshold      = <span class="nu">80</span>,    <span class="cm">-- stud jump = teleport</span>
+
+    <span class="cm">-- ── Scoring ──────────────────────────────────────────────────</span>
+    SpeedViolationScore    = <span class="nu">15</span>,
+    FlyViolationScore      = <span class="nu">20</span>,
+    TeleportViolationScore = <span class="nu">30</span>,
+    ViolationDecayRate     = <span class="nu">2</span>,     <span class="cm">-- pts/second passive decay</span>
+    FlagThreshold          = <span class="nu">60</span>,    <span class="cm">-- score to freeze + report</span>
+
+    <span class="cm">-- ── Cooldown ─────────────────────────────────────────────────</span>
+    ReportCooldownSecs     = <span class="nu">30</span>,    <span class="cm">-- min seconds between webhook fires</span>
+
+    <span class="cm">-- ── Replay ───────────────────────────────────────────────────</span>
+    BufferLengthSecs       = <span class="nu">30</span>,    <span class="cm">-- seconds of footage stored</span>
+    TickRate               = <span class="nu">20</span>,    <span class="cm">-- frames/second recorded</span>
+
+    <span class="cm">-- ── Webhook ──────────────────────────────────────────────────</span>
+    WebhookURL     = <span class="st">"https://discord.com/api/webhooks/..."</span>,
+    WebhookEnabled = <span class="kw">true</span>,
+}</pre>
+      </div>
+
+      <h2>Tuning Tips</h2>
+      <ul style="color:var(--text-dim);margin:8px 0 16px 20px;line-height:2.2">
+        <li><strong style="color:var(--text)">Reduce false positives:</strong> Increase <code>MaxSpeedStuds</code> if your game has speed boosts, or increase <code>MaxAirTimeSecs</code> for games with long jumps.</li>
+        <li><strong style="color:var(--text)">Increase sensitivity:</strong> Lower <code>FlagThreshold</code> for stricter enforcement, or raise <code>ViolationDecayRate</code> to make detection more forgiving.</li>
+        <li><strong style="color:var(--text)">Reduce webhook spam:</strong> Increase <code>ReportCooldownSecs</code> for high-traffic servers.</li>
+        <li><strong style="color:var(--text)">Memory budget:</strong> <code>BufferLengthSecs × TickRate</code> = frame count per player. 30×20 = 600 frames. Each frame holds ~6 values.</li>
+      </ul>
+
+      <div class="section-footer">
+        <button class="nav-btn" onclick="showSection('webhook')">← Webhook</button>
+        <button class="nav-btn" onclick="showSection('commands')">Admin Commands →</button>
+      </div>
+    </div>
+
+    <!-- ── SECTION: COMMANDS ── -->
+    <div class="section" id="section-commands">
+      <div class="page-title">Admin Commands</div>
+      <div class="page-subtitle">Chat commands for admins (configurable by UserId)</div>
+
+      <div class="alert alert-info">
+        <span class="alert-icon">ℹ️</span>
+        <div class="alert-body">Add your UserId to the <code>ADMIN_USER_IDS</code> table in <code>MainAntiCheatServer.server.lua</code>. In Studio, the host is always admin.</div>
+      </div>
+
+      <table class="vio-table">
+        <thead>
+          <tr><th>Command</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code style="color:var(--green);font-family:'JetBrains Mono',monospace">!replay &lt;username&gt;</code></td>
+            <td>Replay the last 30s of the player's movement in ThirdPerson (default).</td>
+          </tr>
+          <tr>
+            <td><code style="color:var(--green);font-family:'JetBrains Mono',monospace">!replay &lt;name&gt; firstperson</code></td>
+            <td>Replay using the player's stored camera look direction.</td>
+          </tr>
+          <tr>
+            <td><code style="color:var(--green);font-family:'JetBrains Mono',monospace">!replay &lt;name&gt; topdown</code></td>
+            <td>Replay with overhead camera view.</td>
+          </tr>
+          <tr>
+            <td><code style="color:var(--amber);font-family:'JetBrains Mono',monospace">!unfreeze &lt;username&gt;</code></td>
+            <td>Unfreezes a player and resets their violation score.</td>
+          </tr>
+          <tr>
+            <td><code style="color:var(--red);font-family:'JetBrains Mono',monospace">!acstop</code></td>
+            <td>Emergency stop — disables all anti-cheat monitoring.</td>
+          </tr>
+          <tr>
+            <td><code style="color:var(--blue);font-family:'JetBrains Mono',monospace">!acstart</code></td>
+            <td>Restart the anti-cheat after a stop.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="section-footer">
+        <button class="nav-btn" onclick="showSection('config')">← Config</button>
+        <button class="nav-btn" onclick="showSection('security')">Security →</button>
+      </div>
+    </div>
+
+    <!-- ── SECTION: SECURITY ── -->
+    <div class="section" id="section-security">
+      <div class="page-title">Security Notes</div>
+      <div class="page-subtitle">Design decisions that prevent bypass</div>
+
+      <div class="card-grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="card">
+          <div style="color:var(--green);font-size:13px;font-weight:600;margin-bottom:8px">✅ SECURE</div>
+          <ul style="color:var(--text-muted);font-size:13px;line-height:2;list-style:none">
+            <li>All detection is server-side only</li>
+            <li>Character freeze is server-applied</li>
+            <li>Client only sends camera direction</li>
+            <li>RemoteEvent inputs are validated + rate-limited</li>
+            <li>Webhook calls are server-only (never client)</li>
+            <li>pcall wraps all HTTP operations</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div style="color:var(--amber);font-size:13px;font-weight:600;margin-bottom:8px">⚠️ LIMITATIONS</div>
+          <ul style="color:var(--text-muted);font-size:13px;line-height:2;list-style:none">
+            <li>Cannot catch client-side visuals (walls, ESP)</li>
+            <li>Lag spikes may trigger false teleport flags</li>
+            <li>Very slow speed hacks may slip under threshold</li>
+            <li>Does not detect aim-bot (no bullet tracking)</li>
+          </ul>
+        </div>
+      </div>
+
+      <h2>RemoteEvent Abuse Prevention</h2>
+      <p>The <code>AC_CameraDirection</code> RemoteEvent is rate-limited to <strong>one update per 0.4 seconds</strong> per player. Each incoming value is validated:</p>
+      <ul style="color:var(--text-dim);margin:8px 0 12px 20px;line-height:2">
+        <li><code>typeof(lookVector) == "Vector3"</code> — must be a Vector3</li>
+        <li><code>lookVector.Magnitude > 0.01</code> — must not be zero</li>
+        <li><code>lookVector.Magnitude &lt; 10</code> — must not be an abnormally large vector</li>
+      </ul>
+      <p>Camera direction is used <strong>only for replay reconstruction</strong>, never for detection. A malicious client sending fake camera data has zero impact on whether they are detected.</p>
+
+      <h2>Webhook URL Security</h2>
+      <p>The webhook URL is stored only in a <strong>server Script</strong> inside ServerScriptService. It is never loaded into ReplicatedStorage or LocalScripts. Clients cannot access it via the Roblox API. Keep it out of public GitHub repositories.</p>
+
+      <div class="alert alert-warn">
+        <span class="alert-icon">⚠️</span>
+        <div class="alert-body"><strong>Recommended for production:</strong> Store the webhook URL in a <strong>ServerStorage</strong> StringValue or a DataStore entry instead of hardcoding it in the script. This allows you to rotate it without publishing a new script.</div>
+      </div>
+
+      <div class="section-footer">
+        <button class="nav-btn" onclick="showSection('commands')">← Admin Commands</button>
+        <span class="footer-text">// end of docs</span>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  const sections = {
+    'overview':  'Overview',
+    'structure': 'Folder Structure',
+    'setup':     'Setup & Installation',
+    'arch':      'System Architecture',
+    'detection': 'Detection Logic',
+    'replay':    'Replay System',
+    'webhook':   'Discord Webhook',
+    'config':    'Configuration',
+    'commands':  'Admin Commands',
+    'security':  'Security Notes',
+  };
+
+  function showSection(id) {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active'));
+
+    const section = document.getElementById('section-' + id);
+    if (section) section.classList.add('active');
+
+    document.querySelectorAll('.sidebar-link').forEach(l => {
+      if (l.getAttribute('onclick') && l.getAttribute('onclick').includes("'" + id + "'")) {
+        l.classList.add('active');
+      }
+    });
+
+    const bc = document.getElementById('breadcrumb-current');
+    if (bc) bc.textContent = sections[id] || id;
+
+    window.scrollTo(0, 0);
+  }
+
+  function copyCode(btn) {
+    const pre = btn.closest('.code-block').querySelector('pre');
+    const text = pre.innerText || pre.textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = 'copied!';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = 'copy';
+        btn.classList.remove('copied');
+      }, 2000);
+    });
+  }
+</script>
+
+</body>
+</html>
