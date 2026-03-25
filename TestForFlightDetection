@@ -1,0 +1,53 @@
+-- Fly Test Script (Studio Safe)
+local player = game.Players.LocalPlayer
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local flying = false
+local speed = 50
+
+local function startFlying()
+	local character = player.Character or player.CharacterAdded:Wait()
+	local hrp = character:WaitForChild("HumanoidRootPart")
+
+	local bodyVelocity = Instance.new("BodyVelocity")
+	bodyVelocity.MaxForce = Vector3.new(1, 1, 1) * 1e6
+	bodyVelocity.Velocity = Vector3.zero
+	bodyVelocity.Parent = hrp
+
+	flying = true
+
+	RunService.RenderStepped:Connect(function()
+		if not flying then
+			bodyVelocity:Destroy()
+			return
+		end
+
+		local moveDir = Vector3.zero
+
+		if UIS:IsKeyDown(Enum.KeyCode.W) then moveDir += workspace.CurrentCamera.CFrame.LookVector end
+		if UIS:IsKeyDown(Enum.KeyCode.S) then moveDir -= workspace.CurrentCamera.CFrame.LookVector end
+		if UIS:IsKeyDown(Enum.KeyCode.A) then moveDir -= workspace.CurrentCamera.CFrame.RightVector end
+		if UIS:IsKeyDown(Enum.KeyCode.D) then moveDir += workspace.CurrentCamera.CFrame.RightVector end
+		if UIS:IsKeyDown(Enum.KeyCode.Space) then moveDir += Vector3.new(0,1,0) end
+		if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir -= Vector3.new(0,1,0) end
+
+		bodyVelocity.Velocity = moveDir.Unit * speed
+	end)
+end
+
+local function stopFlying()
+	flying = false
+end
+
+-- Toggle with F key
+UIS.InputBegan:Connect(function(input, gpe)
+	if gpe then return end
+	if input.KeyCode == Enum.KeyCode.F then
+		if flying then
+			stopFlying()
+		else
+			startFlying()
+		end
+	end
+end)
