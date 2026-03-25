@@ -1,0 +1,63 @@
+--[[
+    ReplayBuffer.lua  (v3 — Fixed)
+    Location: ReplicatedStorage/Modules/ReplayBuffer.lua
+
+    CHANGE: BufferLengthSecs default raised to 60 seconds.
+    Also update AntiCheatManager's DEFAULT_CONFIG:
+        BufferLengthSecs = 60,  ← change this line
+
+    Pre-allocated circular ring buffer.
+    O(1) push. O(N) ordered read. Zero GC pressure on hot path.
+
+    Frame schema:
+    {
+        timestamp     : number                   tick()
+        position      : Vector3
+        cframe        : CFrame
+        velocity      : Vector3                  AssemblyLinearVelocity
+        humanoidState : Enum.HumanoidStateType
+        lookVector    : Vector3                  camera look (client-supplied)
+    }
+--]]
+
+local ReplayBuffer = {}
+ReplayBuffer.__index = ReplayBuffer
+
+function ReplayBuffer.new(bufferSecs, tickRate)
+	local self     = setmetatable({}, ReplayBuffer)
+	self._cap      = math.ceil(bufferSecs * tickRate)
+	self._buf      = table.create(self._cap, nil)
+	self._head     = 1   -- next write slot (1-based)
+	self._count    = 0
+	return self
+end
+
+-- Push a frame (overwrites oldest when full)
+function ReplayBuffer:Push(frame)
+	self._buf[self._head] = frame
+	self._head = (self._head % self._cap) + 1
+	if self._count < self._cap then self._count = self._count + 1 end
+end
+
+-- Returns all frames in chronological order (oldest → newest)
+function ReplayBuffer:GetAll()
+	if self._count == 0 then return {} end
+	local result   = table.create(self._count)
+	local startIdx = (self._count < self._cap) and 1 or self._head
+	for i = 1, self._count do
+		local idx = ((startIdx - 1 + (i - 1)) % self._cap) + 1
+		result[i] = self._buf[idx]
+	end
+	return result
+end
+
+function ReplayBuffer:Count()    return self._count end
+function ReplayBuffer:Capacity() return self._cap   end
+
+function ReplayBuffer:Clear()
+	for i = 1, self._cap do self._buf[i] = nil end
+	self._head  = 1
+	self._count = 0
+end
+
+return ReplayBuffer
