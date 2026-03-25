@@ -1,0 +1,345 @@
+--[[
+    ReplayController.lua  (v4 — Final)
+    Location: ReplicatedStorage/Modules/ReplayController.lua
+
+    FIXES vs v3:
+      • R15 rig now stays together — Animator loads and plays the idle
+        animation immediately after parenting, which keeps AnimationConstraint
+        joints in their bind pose instead of scattering to physics.
+      • Compatible with both R6 (Motor6D) and R15 (AnimationConstraint).
+      • subjectUserId sent in StartReplay so client skips hiding itself
+        when it is the subject.
+      • 60-second buffer support (set BufferLengthSecs = 60 in config).
+--]]
+
+local Players   = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+
+local DUMMY_TAG    = "__AC_ReplayDummy__"
+local REPLAY_SPEED = 1.0
+
+-- Default Roblox idle animation IDs — work for both R6 and R15
+local IDLE_ANIM_IDS = {
+	"rbxassetid://507766388",
+	"rbxassetid://507766666",
+}
+
+-- ─────────────────────────────────────────────────────────────────────────────
+local ReplayController = {}
+ReplayController.__index = ReplayController
+
+function ReplayController.new()
+	local self     = setmetatable({}, ReplayController)
+	self._sessions = {}
+	return self
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PUBLIC
+-- ─────────────────────────────────────────────────────────────────────────────
+
+function ReplayController:PlayReplay(opts)
+	local frames     = opts.frames
+	local viewer     = opts.viewer
+	local subject    = opts.subject
+	local camMode    = opts.cameraMode or "ThirdPerson"
+	local onComplete = opts.onComplete
+
+	if not frames or #frames == 0 then return end
+
+	self:StopReplay(viewer)
+
+	local ev  = self:_getEvent()
+	local rig = self:_buildRig(subject, frames[1].cframe)
+	if not rig then return end
+
+	local session = {
+		running    = true,
+		rig        = rig,
+		viewer     = viewer,
+		cameraMode = camMode,
+	}
+	self._sessions[viewer] = session
+
+	ev:FireClient(viewer, "StartReplay", {
+		cameraMode    = camMode,
+		subjectName   = subject and subject.Name or "Unknown",
+		subjectUserId = subject and subject.UserId or -1,
+		frameCount    = #frames,
+		rigName       = DUMMY_TAG,
+	})
+
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= viewer then
+			ev:FireClient(p, "HideRig", { rigName = DUMMY_TAG })
+		end
+	end
+
+	task.spawn(function()
+		task.wait(0.1)
+		self:_playbackLoop(session, frames, ev)
+		self:_endSession(session, ev, onComplete)
+	end)
+end
+
+function ReplayController:StopReplay(viewer)
+	local s = self._sessions[viewer]
+	if s then s.running = false end
+end
+
+function ReplayController:IsReplaying(viewer)
+	local s = self._sessions[viewer]
+	return s ~= nil and s.running == true
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PRIVATE: Playback loop
+-- ─────────────────────────────────────────────────────────────────────────────
+
+function ReplayController:_playbackLoop(session, frames, ev)
+	local rig      = session.rig
+	local rootPart = rig:FindFirstChild("HumanoidRootPart")
+	local humanoid = rig:FindFirstChildOfClass("Humanoid")
+	local total    = #frames
+
+	for i, frame in ipairs(frames) do
+		if not session.running then break end
+
+		if rootPart then rootPart.CFrame = frame.cframe end
+
+		if humanoid and frame.humanoidState then
+			pcall(function() humanoid:ChangeState(frame.humanoidState) end)
+		end
+
+		ev:FireClient(session.viewer, "Frame", {
+			cf    = frame.cframe,
+			look  = frame.lookVector,
+			idx   = i,
+			total = total,
+		})
+
+		if i < total then
+			local delta = (frames[i + 1].timestamp - frame.timestamp) / REPLAY_SPEED
+			task.wait(math.clamp(delta, 1/60, 0.5))
+		end
+	end
+end
+
+function ReplayController:_endSession(session, ev, onComplete)
+	session.running = false
+	self._sessions[session.viewer] = nil
+
+	if session.rig and session.rig.Parent then session.rig:Destroy() end
+
+	if session.viewer and session.viewer.Parent then
+		ev:FireClient(session.viewer, "EndReplay", {})
+	end
+
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= session.viewer then
+			ev:FireClient(p, "ShowRig", { rigName = DUMMY_TAG })
+		end
+	end
+
+	if onComplete then task.spawn(onComplete) end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PRIVATE: Rig builder
+-- ─────────────────────────────────────────────────────────────────────────────
+
+function ReplayController:_buildRig(subject, startCFrame)
+	local rig
+
+	local sourceChar = subject and subject.Character
+	if sourceChar then
+		local ok, clone = pcall(function() return sourceChar:Clone() end)
+		if ok and clone then rig = clone end
+	end
+
+	if not rig then
+		rig = self:_makeFallbackRig(subject and subject.Name or "Unknown")
+	end
+
+	rig.Name = DUMMY_TAG
+
+	-- Strip ONLY scripts and sounds.
+	-- Keep: AnimationController, Animator, Motor6D, AnimationConstraint,
+	--        BallSocketConstraint, Attachments, WrapTargets — everything
+	--        the joint and animation systems need to hold the rig together.
+	for _, obj in ipairs(rig:GetDescendants()) do
+		if obj:IsA("LocalScript") or obj:IsA("Script") or obj:IsA("ModuleScript")
+			or obj:IsA("Sound") then
+			obj:Destroy()
+		end
+	end
+
+	-- Root part: anchored so we can manually CFrame it each frame
+	local root = rig:FindFirstChild("HumanoidRootPart")
+	if root then
+		root.Anchored     = true
+		root.CanCollide   = false
+		root.Transparency = 1
+		root.CFrame       = startCFrame or CFrame.new(0, 5, 0)
+	end
+
+	-- All other parts: no collision, physics-driven by animation system
+	for _, part in ipairs(rig:GetDescendants()) do
+		if part:IsA("BasePart") and part ~= root then
+			part.CanCollide = false
+			part.Anchored   = false
+		end
+	end
+
+	-- Freeze humanoid movement — but do NOT touch Animator or AnimationController
+	local hum = rig:FindFirstChildOfClass("Humanoid")
+	if hum then
+		hum.PlatformStand = true
+		hum.AutoRotate    = false
+		hum.WalkSpeed     = 0
+		hum.JumpPower     = 0
+	end
+
+	-- Billboard tag above head
+	local head = rig:FindFirstChild("Head")
+	if head then
+		local bg           = Instance.new("BillboardGui")
+		bg.Name            = "AC_ReplayTag"
+		bg.Size            = UDim2.new(0, 260, 0, 44)
+		bg.StudsOffset     = Vector3.new(0, 3.2, 0)
+		bg.AlwaysOnTop     = true
+		bg.Parent          = head
+
+		local lbl                  = Instance.new("TextLabel")
+		lbl.Size                   = UDim2.new(1, 0, 1, 0)
+		lbl.BackgroundColor3       = Color3.fromRGB(12, 12, 12)
+		lbl.BackgroundTransparency = 0.2
+		lbl.Font                   = Enum.Font.GothamBold
+		lbl.TextColor3             = Color3.fromRGB(255, 60, 40)
+		lbl.TextStrokeColor3       = Color3.new(0, 0, 0)
+		lbl.TextStrokeTransparency = 0.3
+		lbl.TextScaled             = true
+		-- Use subject name, NOT the dummy tag name
+		lbl.Text                   = "▶ REPLAY — " .. (subject and subject.Name or "?")
+		lbl.Parent                 = bg
+	end
+
+	-- Highlight outline
+	local hl               = Instance.new("Highlight")
+	hl.Name                = "AC_Highlight"
+	hl.FillColor           = Color3.fromRGB(255, 50, 30)
+	hl.OutlineColor        = Color3.fromRGB(255, 255, 255)
+	hl.FillTransparency    = 0.72
+	hl.OutlineTransparency = 0
+	hl.DepthMode           = Enum.HighlightDepthMode.Occluded
+	hl.Adornee             = rig
+	hl.Parent              = rig
+
+	-- Set PrimaryPart before parenting to avoid origin flash
+	if root then rig.PrimaryPart = root end
+	rig.Parent = Workspace
+
+	-- ── KEY FIX: start an idle animation so R15 joints hold their bind pose ──
+	--
+	-- R15 uses AnimationConstraint joints instead of Motor6D. These joints
+	-- REQUIRE an active animation track to stay in position. Without one,
+	-- all constrained limbs immediately fall to physics and scatter.
+	--
+	-- We load one of the default Roblox idle anims on the cloned Animator.
+	-- This is purely visual — it just holds the rig in a neutral pose.
+	-- The Humanoid state changes in _playbackLoop will layer movement on top.
+	--
+	if hum then
+		local animator = hum:FindFirstChildOfClass("Animator")
+		if not animator then
+			animator        = Instance.new("Animator")
+			animator.Parent = hum
+		end
+
+		-- Try each idle ID until one loads successfully
+		for _, animId in ipairs(IDLE_ANIM_IDS) do
+			local anim      = Instance.new("Animation")
+			anim.AnimationId = animId
+			local ok, track = pcall(function()
+				return animator:LoadAnimation(anim)
+			end)
+			if ok and track then
+				track:Play()
+				track.Looped = true
+				break  -- one idle is enough
+			end
+			anim:Destroy()
+		end
+	end
+
+	return rig
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Fallback block rig (used only when character clone fails)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+function ReplayController:_makeFallbackRig(name)
+	local model = Instance.new("Model")
+	model.Name  = name
+
+	local function mkPart(pName, sz, col, anchored)
+		local p      = Instance.new("Part")
+		p.Name       = pName
+		p.Size       = sz
+		p.Color      = col
+		p.Material   = Enum.Material.SmoothPlastic
+		p.CanCollide = false
+		p.Anchored   = anchored == true
+		p.Parent     = model
+		return p
+	end
+
+	local root = mkPart("HumanoidRootPart", Vector3.new(2,2,1), Color3.new(), true)
+	root.Transparency = 1
+
+	local torso = mkPart("Torso",     Vector3.new(2,2,1), Color3.fromRGB(30,100,200))
+	local head  = mkPart("Head",      Vector3.new(1,1,1), Color3.fromRGB(255,195,130))
+	local lArm  = mkPart("Left Arm",  Vector3.new(1,2,1), Color3.fromRGB(30,100,200))
+	local rArm  = mkPart("Right Arm", Vector3.new(1,2,1), Color3.fromRGB(30,100,200))
+	local lLeg  = mkPart("Left Leg",  Vector3.new(1,2,1), Color3.fromRGB(20,20,170))
+	local rLeg  = mkPart("Right Leg", Vector3.new(1,2,1), Color3.fromRGB(20,20,170))
+
+	local function weld(a, b, offset)
+		local w = Instance.new("WeldConstraint")
+		w.Part0 = a; w.Part1 = b; w.Parent = a
+		b.CFrame = a.CFrame * (offset or CFrame.new())
+	end
+
+	weld(root, torso)
+	weld(root, head,  CFrame.new(0,   1.5, 0))
+	weld(root, lArm,  CFrame.new(-1.5, 0,  0))
+	weld(root, rArm,  CFrame.new( 1.5, 0,  0))
+	weld(root, lLeg,  CFrame.new(-0.5,-2,  0))
+	weld(root, rLeg,  CFrame.new( 0.5,-2,  0))
+
+	local hum         = Instance.new("Humanoid")
+	hum.PlatformStand = true
+	hum.WalkSpeed     = 0
+	hum.JumpPower     = 0
+	hum.Parent        = model
+	model.PrimaryPart = root
+	return model
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PRIVATE: RemoteEvent
+-- ─────────────────────────────────────────────────────────────────────────────
+
+function ReplayController:_getEvent()
+	local rs = game:GetService("ReplicatedStorage")
+	local ev = rs:FindFirstChild("AC_ReplayEvent")
+	if not ev then
+		ev        = Instance.new("RemoteEvent")
+		ev.Name   = "AC_ReplayEvent"
+		ev.Parent = rs
+	end
+	return ev
+end
+
+return ReplayController
